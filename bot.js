@@ -417,10 +417,10 @@ client.once('ready', () => {
     // Ustaw status bota
     client.user.setActivity('🎮 Minecraft Clan', { type: 'WATCHING' });
 
-    // Aktualizuj statystyki co 5 minut
+    // Aktualizuj statystyki co 1 minute
     client.guilds.cache.forEach(guild => {
         updateStatsChannels(guild);
-        setInterval(() => updateStatsChannels(guild), 5 * 60 * 1000);
+        setInterval(() => updateStatsChannels(guild), 1 * 60 * 1000);
     });
     
     // Losowanie loterii co 24h
