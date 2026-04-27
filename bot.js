@@ -377,9 +377,10 @@ function checkSpam(userId) {
 // Funkcja aktualizacji kanalow statystyk
 async function updateStatsChannels(guild) {
     try {
-        const totalMembers = guild.memberCount;
-        const onlineMembers = guild.members.cache.filter(m => m.presence?.status !== 'offline').size;
+        const allMembers = guild.memberCount;
         const bots = guild.members.cache.filter(m => m.user.bot).size;
+        const totalMembers = allMembers - bots; // Tylko ludzie, bez botów
+        const onlineMembers = guild.members.cache.filter(m => !m.user.bot && m.presence?.status && m.presence.status !== 'offline').size;
 
         // Znajdz kanaly statystyk (po nazwie)
         const channels = guild.channels.cache;
