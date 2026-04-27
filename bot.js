@@ -383,8 +383,8 @@ async function updateStatsChannels(guild) {
         // Znajdz kanaly statystyk (po nazwie)
         const channels = guild.channels.cache;
         
-        // Kanal z liczba czlonkow
-        const membersChannel = channels.find(c => c.name.includes('Czlonkow:') || c.name.includes('STAN:'));
+        // Kanal z liczba czlonkow (po ID)
+        const membersChannel = guild.channels.cache.get('1498105607369265263') || channels.find(c => c.name.includes('Czlonkow:') || c.name.includes('STAN:'));
         if (membersChannel && membersChannel.type === ChannelType.GuildVoice) {
             await membersChannel.setName(`👥 Czlonkow: ${totalMembers}`).catch(() => {});
         }
