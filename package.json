@@ -1,0 +1,17 @@
+{
+  "name": "minecraft-clan-bot",
+  "version": "1.0.0",
+  "description": "Bot Discord dla klanu Minecraft z systemem weryfikacji, ticketów i moderacji",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "node bot.js"
+  },
+  "keywords": ["discord", "bot", "minecraft", "clan"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.5"
+  }
+}

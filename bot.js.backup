@@ -1,0 +1,693 @@
+﻿require('dotenv').config();
+const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits, ChannelType } = require('discord.js');
+
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMessageReactions,
+        GatewayIntentBits.GuildModeration
+    ],
+    partials: [Partials.Message, Partials.Channel, Partials.Reaction]
+});
+
+// Przechowywanie aktywnych ticketĂłw
+const activeTickets = new Map();
+const mutedUsers = new Map();
+
+// Funkcja aktualizacji kanaĹ‚Ăłw statystyk
+async function updateStatsChannels(guild) {
+    try {
+        const totalMembers = guild.memberCount;
+        const onlineMembers = guild.members.cache.filter(m => m.presence?.status !== 'offline').size;
+        const bots = guild.members.cache.filter(m => m.user.bot).size;
+
+        // ZnajdĹş kanaĹ‚y statystyk (po nazwie)
+        const channels = guild.channels.cache;
+        
+        // KanaĹ‚ z liczbÄ… czĹ‚onkĂłw
+        const membersChannel = channels.find(c => c.name.includes('CzĹ‚onkĂłw:') || c.name.includes('STAN:'));
+        if (membersChannel && membersChannel.type === ChannelType.GuildVoice) {
+            await membersChannel.setName(`đź‘Ą CzĹ‚onkĂłw: ${totalMembers}`).catch(() => {});
+        }
+
+        // KanaĹ‚ z liczbÄ… online
+        const onlineChannel = channels.find(c => c.name.includes('Online:'));
+        if (onlineChannel && onlineChannel.type === ChannelType.GuildVoice) {
+            await onlineChannel.setName(`đźź˘ Online: ${onlineMembers}`).catch(() => {});
+        }
+
+        // KanaĹ‚ z liczbÄ… botĂłw
+        const botsChannel = channels.find(c => c.name.includes('BotĂłw:'));
+        if (botsChannel && botsChannel.type === ChannelType.GuildVoice) {
+            await botsChannel.setName(`đź¤– BotĂłw: ${bots}`).catch(() => {});
+        }
+    } catch (error) {
+        console.error('BĹ‚Ä…d aktualizacji statystyk:', error);
+    }
+}
+
+// Event: Bot gotowy
+client.once('ready', () => {
+    console.log(`âś… Bot zalogowany jako ${client.user.tag}`);
+    console.log(`đź“Š Serwery: ${client.guilds.cache.size}`);
+    console.log(`đź‘Ą UĹĽytkownicy: ${client.guilds.cache.reduce((a, g) => a + g.memberCount, 0)}`);
+    
+    // Ustaw status bota
+    client.user.setActivity('đźŽ® Minecraft Clan', { type: 'WATCHING' });
+
+    // Aktualizuj statystyki co 5 minut
+    client.guilds.cache.forEach(guild => {
+        updateStatsChannels(guild);
+        setInterval(() => updateStatsChannels(guild), 5 * 60 * 1000);
+    });
+});
+
+// Event: Nowy czĹ‚onek doĹ‚Ä…cza
+client.on('guildMemberAdd', async (member) => {
+    const welcomeChannel = member.guild.channels.cache.get(process.env.WELCOME_CHANNEL_ID);
+    
+    if (welcomeChannel) {
+        const welcomeEmbed = new EmbedBuilder()
+            .setColor('#00FF00')
+            .setTitle('đź‘‹ Witamy na serwerze!')
+            .setDescription(`Witaj ${member}! JesteĹ› **${member.guild.memberCount}** czĹ‚onkiem naszego klanu!`)
+            .addFields(
+                { name: 'đź“ś Regulamin', value: 'Przeczytaj regulamin w <#CHANNEL_ID>', inline: true },
+                { name: 'âś… Weryfikacja', value: 'Zweryfikuj siÄ™ w <#CHANNEL_ID>', inline: true }
+            )
+            .setThumbnail(member.user.displayAvatarURL())
+            .setTimestamp()
+            .setFooter({ text: member.guild.name, iconURL: member.guild.iconURL() });
+        
+        welcomeChannel.send({ embeds: [welcomeEmbed] });
+    }
+    
+    // Log do kanaĹ‚u administracyjnego
+    const logsChannel = member.guild.channels.cache.get(process.env.LOGS_CHANNEL_ID);
+    if (logsChannel) {
+        const logEmbed = new EmbedBuilder()
+            .setColor('#00FF00')
+            .setTitle('đź“Ą Nowy czĹ‚onek')
+            .setDescription(`${member.user.tag} (${member.id})`)
+            .addFields(
+                { name: 'Konto utworzone', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`, inline: true },
+                { name: 'DoĹ‚Ä…czyĹ‚', value: `<t:${Math.floor(Date.now() / 1000)}:R>`, inline: true }
+            )
+            .setThumbnail(member.user.displayAvatarURL())
+            .setTimestamp();
+        
+        logsChannel.send({ embeds: [logEmbed] });
+    }
+
+    // Aktualizuj statystyki
+    updateStatsChannels(member.guild);
+});
+
+// Event: CzĹ‚onek opuszcza serwer
+client.on('guildMemberRemove', async (member) => {
+    const logsChannel = member.guild.channels.cache.get(process.env.LOGS_CHANNEL_ID);
+    if (logsChannel) {
+        const logEmbed = new EmbedBuilder()
+            .setColor('#FF0000')
+            .setTitle('đź“¤ CzĹ‚onek opuĹ›ciĹ‚ serwer')
+            .setDescription(`${member.user.tag} (${member.id})`)
+            .addFields(
+                { name: 'DoĹ‚Ä…czyĹ‚', value: `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>`, inline: true },
+                { name: 'OpuĹ›ciĹ‚', value: `<t:${Math.floor(Date.now() / 1000)}:R>`, inline: true }
+            )
+            .setThumbnail(member.user.displayAvatarURL())
+            .setTimestamp();
+        
+        logsChannel.send({ embeds: [logEmbed] });
+    }
+
+    // Aktualizuj statystyki
+    updateStatsChannels(member.guild);
+});
+
+// Event: WiadomoĹ›ci (komendy)
+client.on('messageCreate', async (message) => {
+    if (message.author.bot) return;
+    if (!message.content.startsWith('!')) return;
+
+    const args = message.content.slice(1).trim().split(/ +/);
+    const command = args.shift().toLowerCase();
+
+    // Komenda: !setup-verification (tworzy panel weryfikacji)
+    if (command === 'setup-verification') {
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            return message.reply('âťŚ Nie masz uprawnieĹ„ do tej komendy!');
+        }
+
+        const verificationEmbed = new EmbedBuilder()
+            .setColor('#00FF00')
+            .setTitle('âś… WERYFIKACJA')
+            .setDescription('Kliknij przycisk poniĹĽej, aby zweryfikowaÄ‡ siÄ™ i uzyskaÄ‡ dostÄ™p do serwera!')
+            .addFields(
+                { name: 'đź“ś Zasady', value: 'â€˘ Przeczytaj regulamin\nâ€˘ BÄ…dĹş kulturalny\nâ€˘ Szanuj innych czĹ‚onkĂłw', inline: false }
+            )
+            .setFooter({ text: 'Kliknij przycisk aby siÄ™ zweryfikowaÄ‡' })
+            .setTimestamp();
+
+        const verifyButton = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('verify')
+                    .setLabel('âś… Zweryfikuj siÄ™')
+                    .setStyle(ButtonStyle.Success)
+            );
+
+        await message.channel.send({ embeds: [verificationEmbed], components: [verifyButton] });
+        message.delete().catch(() => {});
+    }
+
+    // Komenda: !setup-tickets (tworzy panel ticketĂłw)
+    if (command === 'setup-tickets') {
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            return message.reply('âťŚ Nie masz uprawnieĹ„ do tej komendy!');
+        }
+
+        const ticketEmbed = new EmbedBuilder()
+            .setColor('#0099FF')
+            .setTitle('đźŽ« SYSTEM PODAĹ')
+            .setDescription('Kliknij przycisk poniĹĽej, aby utworzyÄ‡ podanie do klanu!')
+            .addFields(
+                { name: 'đź“ť Co zawrzeÄ‡ w podaniu?', value: 'â€˘ TwĂłj nick w Minecraft\nâ€˘ Wiek\nâ€˘ Poprzednie klany\nâ€˘ DoĹ›wiadczenie w grze\nâ€˘ Dlaczego chcesz doĹ‚Ä…czyÄ‡ do nas?\nâ€˘ Ile jesteĹ› w stanie wpĹ‚aciÄ‡ rubinĂłw na start?\nâ€˘ Ile robisz winĂłw dziennie/tygodniowo?', inline: false },
+                { name: 'âŹ±ď¸Ź Czas odpowiedzi', value: 'Odpowiemy w ciÄ…gu 3 godzin', inline: false }
+            )
+            .setFooter({ text: 'Kliknij przycisk aby utworzyÄ‡ podanie' })
+            .setTimestamp();
+
+        const ticketButton = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('create_ticket')
+                    .setLabel('đź“ť UtwĂłrz podanie')
+                    .setStyle(ButtonStyle.Primary)
+            );
+
+        await message.channel.send({ embeds: [ticketEmbed], components: [ticketButton] });
+        message.delete().catch(() => {});
+    }
+
+    // Komenda: !members (liczba czĹ‚onkĂłw)
+    if (command === 'members' || command === 'czĹ‚onkowie') {
+        const totalMembers = message.guild.memberCount;
+        const onlineMembers = message.guild.members.cache.filter(m => m.presence?.status !== 'offline').size;
+        const bots = message.guild.members.cache.filter(m => m.user.bot).size;
+        const humans = totalMembers - bots;
+
+        const statsEmbed = new EmbedBuilder()
+            .setColor('#0099FF')
+            .setTitle('đź“Š Statystyki Serwera')
+            .setDescription(`**${message.guild.name}**`)
+            .addFields(
+                { name: 'đź‘Ą Wszyscy czĹ‚onkowie', value: `${totalMembers}`, inline: true },
+                { name: 'đźź˘ Online', value: `${onlineMembers}`, inline: true },
+                { name: 'đź‘¤ Ludzie', value: `${humans}`, inline: true },
+                { name: 'đź¤– Boty', value: `${bots}`, inline: true },
+                { name: 'đź“… Serwer utworzony', value: `<t:${Math.floor(message.guild.createdTimestamp / 1000)}:R>`, inline: true }
+            )
+            .setThumbnail(message.guild.iconURL())
+            .setTimestamp();
+
+        message.reply({ embeds: [statsEmbed] });
+    }
+
+    // Komenda: !regulamin (wyĹ›wietla regulamin)
+    if (command === 'regulamin') {
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            return message.reply('âťŚ Nie masz uprawnieĹ„ do tej komendy!');
+        }
+
+        const regulaminEmbed1 = new EmbedBuilder()
+            .setColor('#FFD700')
+            .setTitle('đź“ś Ę€á´‡É˘á´śĘźá´€á´ŤÉŞÉ´ sá´‡Ę€á´ˇá´‡Ę€á´€')
+            .setDescription('â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•')
+            .addFields(
+                { 
+                    name: 'đź”° á´á´Źá´…sá´›á´€á´ˇá´Źá´ˇá´‡ á´˘á´€sá´€á´…ĘŹ', 
+                    value: '**1ď¸ŹâŁ sá´˘á´€É´á´śá´Š ÉŞÉ´É´ĘŹá´„Ęś á´śĹĽĘŹá´›á´‹á´Źá´ˇÉ´ÉŞá´‹Ăłá´ˇ**\nâ€˘ á´˘á´€á´‹á´€á´˘ á´ˇĘŹá´˘ĘŹá´ˇá´€É´ÉŞá´€, á´ŹĘ™Ę€á´€ĹĽá´€É´ÉŞá´€ ÉŞ á´Ę€á´Źá´ˇá´Źá´‹á´Źá´ˇá´€É´ÉŞá´€\nâ€˘ Ę™á´€Ě¨á´…á´˘Ě á´‹á´śĘźá´›á´śĘ€á´€ĘźÉ´ĘŹ ÉŞ á´˘ĘŹá´„á´˘ĘźÉŞá´ˇĘŹ\n\n**2ď¸ŹâŁ á´˘á´€á´‹á´€á´˘ sá´á´€á´Ťá´ś ÉŞ ęś°Ęźá´Źá´Źá´…á´ś**\nâ€˘ É´ÉŞá´‡ á´ˇĘŹsĘŹĘźá´€á´Š á´›á´‡á´Š sá´€á´Ťá´‡á´Š á´ˇÉŞá´€á´…á´Źá´Ťá´ŹĹ›á´„ÉŞ á´ˇÉŞá´‡Ęźá´Źá´‹Ę€á´Źá´›É´ÉŞá´‡\nâ€˘ É´ÉŞá´‡ á´ÉŞÉ´É˘á´śá´Š Ę™á´‡á´˘ á´á´Źá´ˇá´Źá´…á´ś\n\n**3ď¸ŹâŁ á´˘á´€á´‹á´€á´˘ Ę€á´‡á´‹Ęźá´€á´ŤĘŹ**\nâ€˘ É´ÉŞá´‡ Ę€á´‡á´‹Ęźá´€á´Ťá´śá´Š ÉŞÉ´É´ĘŹá´„Ęś sá´‡Ę€á´ˇá´‡Ę€Ăłá´ˇ Ę™á´‡á´˘ á´˘É˘á´Źá´…ĘŹ\nâ€˘ á´˘á´€á´‹á´€á´˘ á´ˇĘŹsĘŹĘźá´€É´ÉŞá´€ ĘźÉŞÉ´á´‹Ăłá´ˇ á´˘á´€á´Ę€á´€sá´˘á´€á´Šá´€Ě¨á´„ĘŹá´„Ęś', 
+                    inline: false 
+                },
+                { 
+                    name: '\u200B', 
+                    value: '**4ď¸ŹâŁ á´śĹĽĘŹá´ˇá´€á´Š á´‹á´€É´á´€ĘźĂłá´ˇ á´˘É˘á´Źá´…É´ÉŞá´‡ á´˘ á´Ę€á´˘á´‡á´˘É´á´€á´„á´˘á´‡É´ÉŞá´‡á´Ť**\nâ€˘ á´„á´˘á´€á´› á´ŹÉ˘ĂłĘźÉ´ĘŹ - Ę€á´Źá´˘á´Ťá´Źá´ˇĘŹ\nâ€˘ á´Ťá´‡á´ŤĘŹ - Ĺ›á´ŤÉŞá´‡sá´˘É´á´‡ á´ŹĘ™Ę€á´€á´˘á´‹ÉŞ\nâ€˘ á´á´ á´ - Ę€á´Źá´˘á´Ťá´Źá´ˇĘŹ á´Ź á´ˇá´€Ęźá´„á´‡\n\n**5ď¸ŹâŁ á´˘á´€á´‹á´€á´˘ á´›Ę€á´‡Ĺ›á´„ÉŞ É´ÉŞá´‡á´Ę€á´˘ĘŹá´˘á´ˇá´ŹÉŞá´›ĘŹá´„Ęś**\nâ€˘ á´˘á´€á´‹á´€á´˘ á´›Ę€á´‡Ĺ›á´„ÉŞ +18, á´Ę€á´˘á´‡á´Ťá´Źá´„ĘŹ, É˘á´ŹĘ€á´‡\nâ€˘ á´˘á´€á´‹á´€á´˘ á´›Ę€á´‡Ĺ›á´„ÉŞ Ę€á´€sÉŞsá´›á´Źá´ˇsá´‹ÉŞá´„Ęś ÉŞ á´…ĘŹsá´‹Ę€ĘŹá´ŤÉŞÉ´á´śá´Šá´€Ě¨á´„ĘŹá´„Ęś', 
+                    inline: false 
+                }
+            )
+            .setTimestamp();
+
+        const regulaminEmbed2 = new EmbedBuilder()
+            .setColor('#FF6B6B')
+            .setTitle('âš”ď¸Ź á´˘á´€sá´€á´…ĘŹ á´‹Ęźá´€É´á´ś')
+            .addFields(
+                { 
+                    name: 'đźŽ® á´€á´‹á´›ĘŹá´ˇÉ´á´ŹĹ›á´„Ě', 
+                    value: 'â€˘ á´ŤÉŞÉ´ÉŞá´Ťá´śá´Ť 3 É˘á´Źá´…á´˘ÉŞÉ´ĘŹ á´…á´˘ÉŞá´‡É´É´ÉŞá´‡ á´ˇ É˘Ę€á´˘á´‡\nâ€˘ á´śá´…á´˘ÉŞá´€Ęź á´ˇ á´‡á´ á´‡É´á´›á´€á´„Ęś á´‹Ęźá´€É´á´Źá´ˇĘŹá´„Ęś\nâ€˘ ÉŞÉ´ęś°á´ŹĘ€á´Ťá´śá´Š á´Ź á´…Ęźá´śĹĽszá´‡á´Š É´ÉŞá´‡á´ŹĘ™á´‡á´„É´á´ŹĹ›á´„ÉŞ', 
+                    inline: true 
+                },
+                { 
+                    name: 'đź’Ž á´ˇá´Ęźá´€á´›ĘŹ', 
+                    value: 'â€˘ á´ˇá´Ęźá´€á´›á´€ sá´›á´€Ę€á´›á´Źá´ˇá´€ á´śsá´›á´€Ęźá´€É´á´€ á´˘ ĘźÉŞá´…á´‡Ę€á´‡á´Ť\nâ€˘ Ę€á´‡É˘á´śĘźá´€Ę€É´á´‡ á´ˇá´Ęźá´€á´›ĘŹ É´á´€ Ę€á´Źá´˘á´ˇĂłá´Š á´‹Ęźá´€É´á´ś\nâ€˘ á´ˇsá´ĂłĘźá´Ę€á´€á´„á´€ á´Ę€á´˘ĘŹ ęś°á´€Ę€á´Ťá´€á´„Ęś', 
+                    inline: true 
+                },
+                { 
+                    name: 'đźŹ† á´ˇÉŞÉ´ĘŹ', 
+                    value: 'â€˘ á´ŤÉŞÉ´ÉŞá´Ťá´śá´Ť 10 á´ˇÉŞÉ´Ăłá´ˇ á´›ĘŹÉ˘á´Źá´…É´ÉŞá´Źá´ˇá´Ź\nâ€˘ á´śá´…á´˘ÉŞá´€Ęź á´ˇ á´ˇá´€Ęźá´‹á´€á´„Ęś á´‹Ęźá´€É´á´Źá´ˇĘŹá´„Ęś\nâ€˘ á´ˇsá´ĂłĘźá´Ę€á´€á´„á´€ á´˘ á´„á´˘Ęźá´ŹÉ´á´‹á´€á´ŤÉŞ', 
+                    inline: true 
+                },
+                { 
+                    name: 'đź¤ť Ęźá´Źá´Šá´€ĘźÉ´á´ŹĹ›á´„Ě', 
+                    value: 'â€˘ á´˘á´€á´‹á´€á´˘ É˘Ę€ĘŹ á´ˇ ÉŞÉ´É´ĘŹá´„Ęś á´‹Ęźá´€É´á´€á´„Ęś\nâ€˘ á´˘á´€á´‹á´€á´˘ á´˘á´…Ę€á´€á´…ĘŹ ÉŞ á´á´Źá´…á´€á´ˇá´€É´ÉŞá´€ ÉŞÉ´ęś°á´ŹĘ€á´Ťá´€á´„á´ŠÉŞ\nâ€˘ sá´˘á´€É´á´śá´Š ĘźÉŞá´…á´‡Ę€Ăłá´ˇ ÉŞ á´Ťá´Źá´…á´‡Ę€á´€á´›á´ŹĘ€Ăłá´ˇ', 
+                    inline: true 
+                }
+            )
+            .setTimestamp();
+
+        const regulaminEmbed3 = new EmbedBuilder()
+            .setColor('#FFA500')
+            .setTitle('âš ď¸Ź á´‹á´€Ę€ĘŹ')
+            .setDescription('đź”¸ **á´Źsá´›Ę€á´˘á´‡ĹĽá´‡É´ÉŞá´‡** - Ęźá´‡á´‹á´‹ÉŞá´‡ É´á´€Ę€á´śsá´˘á´‡É´ÉŞá´€\nđź”¸ **á´Ťá´śá´›á´‡** - sá´á´€á´Ť, ęś°Ęźá´Źá´Źá´…, É´ÉŞá´‡á´‹á´śĘźá´›á´śĘ€á´€ĘźÉ´á´‡ á´˘á´€á´„Ęśá´Źá´ˇá´€É´ÉŞá´‡\nđź”¸ **á´‹ÉŞá´„á´‹** - á´á´Źá´ˇá´›á´€Ę€á´˘á´€á´Šá´€Ě¨á´„á´‡ sÉŞá´‡Ě¨ É´á´€Ę€á´śsá´˘á´‡É´ÉŞá´€\nđź”¸ **Ę™á´€É´** - á´á´Źá´ˇá´€ĹĽÉ´á´‡ É´á´€Ę€á´śsá´˘á´‡É´ÉŞá´€, á´˘á´…Ę€á´€á´…á´€, á´›Ę€á´‡Ĺ›á´„ÉŞ +18')
+            .addFields(
+                { 
+                    name: 'âś… á´ˇá´‡Ę€ĘŹęś°ÉŞá´‹á´€á´„á´Šá´€', 
+                    value: 'á´€Ę™ĘŹ á´˘ĘŹsá´‹á´€á´„Ě á´…á´Źsá´›á´‡Ě¨á´ á´…á´Ź sá´‡Ę€á´ˇá´‡Ę€á´€:\n1. á´Ę€á´˘á´‡á´„á´˘ĘŹá´›á´€á´Š Ę€á´‡É˘á´śĘźá´€á´ŤÉŞÉ´\n2. á´‹ĘźÉŞá´‹É´ÉŞá´Š á´Ę€á´˘ĘŹá´„ÉŞsá´‹ á´ˇá´‡Ę€ĘŹęś°ÉŞá´‹á´€á´„á´ŠÉŞ\n3. á´„ÉŞá´‡sá´˘ sÉŞá´‡Ě¨ É˘Ę€á´€Ě¨!', 
+                    inline: false 
+                }
+            )
+            .setFooter({ text: 'á´€á´…á´ŤÉŞÉ´ÉŞsá´›Ę€á´€á´„á´Šá´€ á´˘á´€sá´›Ę€á´˘á´‡É˘á´€ sá´ŹĘ™ÉŞá´‡ á´Ę€á´€á´ˇá´Ź á´…á´Ź á´˘á´ŤÉŞá´€É´ĘŹ Ę€á´‡É˘á´śĘźá´€á´ŤÉŞÉ´á´ś' })
+            .setTimestamp();
+
+        await message.channel.send({ embeds: [regulaminEmbed1, regulaminEmbed2, regulaminEmbed3] });
+        message.delete().catch(() => {});
+    }
+
+    // Komenda: !mute
+    if (command === 'mute') {
+        if (!message.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+            return message.reply('âťŚ Nie masz uprawnieĹ„ do wyciszania czĹ‚onkĂłw!');
+        }
+
+        const member = message.mentions.members.first();
+        const duration = args[1] || '10m';
+        const reason = args.slice(2).join(' ') || 'Brak powodu';
+
+        if (!member) {
+            return message.reply('âťŚ Oznacz uĹĽytkownika do wyciszenia! UĹĽycie: `!mute @uĹĽytkownik 10m powĂłd`');
+        }
+
+        if (member.permissions.has(PermissionFlagsBits.Administrator)) {
+            return message.reply('âťŚ Nie moĹĽesz wyciszyÄ‡ administratora!');
+        }
+
+        // Konwersja czasu
+        const timeMatch = duration.match(/^(\d+)([smhd])$/);
+        if (!timeMatch) {
+            return message.reply('âťŚ NieprawidĹ‚owy format czasu! UĹĽyj: 10s, 5m, 2h, 1d');
+        }
+
+        const timeValue = parseInt(timeMatch[1]);
+        const timeUnit = timeMatch[2];
+        let milliseconds;
+
+        switch (timeUnit) {
+            case 's': milliseconds = timeValue * 1000; break;
+            case 'm': milliseconds = timeValue * 60 * 1000; break;
+            case 'h': milliseconds = timeValue * 60 * 60 * 1000; break;
+            case 'd': milliseconds = timeValue * 24 * 60 * 60 * 1000; break;
+        }
+
+        try {
+            await member.timeout(milliseconds, reason);
+
+            const muteEmbed = new EmbedBuilder()
+                .setColor('#FFA500')
+                .setTitle('đź”‡ UĹĽytkownik wyciszony')
+                .addFields(
+                    { name: 'UĹĽytkownik', value: `${member.user.tag}`, inline: true },
+                    { name: 'Moderator', value: `${message.author.tag}`, inline: true },
+                    { name: 'Czas', value: duration, inline: true },
+                    { name: 'PowĂłd', value: reason, inline: false }
+                )
+                .setTimestamp();
+
+            message.reply({ embeds: [muteEmbed] });
+
+            // Log
+            const logsChannel = message.guild.channels.cache.get(process.env.LOGS_CHANNEL_ID);
+            if (logsChannel) {
+                logsChannel.send({ embeds: [muteEmbed] });
+            }
+        } catch (error) {
+            message.reply('âťŚ Nie udaĹ‚o siÄ™ wyciszyÄ‡ uĹĽytkownika!');
+            console.error(error);
+        }
+    }
+
+    // Komenda: !unmute
+    if (command === 'unmute') {
+        if (!message.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+            return message.reply('âťŚ Nie masz uprawnieĹ„ do odciszania czĹ‚onkĂłw!');
+        }
+
+        const member = message.mentions.members.first();
+        if (!member) {
+            return message.reply('âťŚ Oznacz uĹĽytkownika do odciszenia! UĹĽycie: `!unmute @uĹĽytkownik`');
+        }
+
+        try {
+            await member.timeout(null);
+            message.reply(`âś… ${member.user.tag} zostaĹ‚ odciszony!`);
+        } catch (error) {
+            message.reply('âťŚ Nie udaĹ‚o siÄ™ odciszyÄ‡ uĹĽytkownika!');
+        }
+    }
+
+    // Komenda: !kick
+    if (command === 'kick' || command === 'wyrzuÄ‡') {
+        if (!message.member.permissions.has(PermissionFlagsBits.KickMembers)) {
+            return message.reply('âťŚ Nie masz uprawnieĹ„ do wyrzucania czĹ‚onkĂłw!');
+        }
+
+        const member = message.mentions.members.first();
+        const reason = args.slice(1).join(' ') || 'Brak powodu';
+
+        if (!member) {
+            return message.reply('âťŚ Oznacz uĹĽytkownika do wyrzucenia! UĹĽycie: `!kick @uĹĽytkownik powĂłd`');
+        }
+
+        if (!member.kickable) {
+            return message.reply('âťŚ Nie mogÄ™ wyrzuciÄ‡ tego uĹĽytkownika!');
+        }
+
+        try {
+            await member.kick(reason);
+
+            const kickEmbed = new EmbedBuilder()
+                .setColor('#FF8800')
+                .setTitle('đź‘˘ UĹĽytkownik wyrzucony')
+                .addFields(
+                    { name: 'UĹĽytkownik', value: `${member.user.tag}`, inline: true },
+                    { name: 'Moderator', value: `${message.author.tag}`, inline: true },
+                    { name: 'PowĂłd', value: reason, inline: false }
+                )
+                .setTimestamp();
+
+            message.reply({ embeds: [kickEmbed] });
+
+            // Log
+            const logsChannel = message.guild.channels.cache.get(process.env.LOGS_CHANNEL_ID);
+            if (logsChannel) {
+                logsChannel.send({ embeds: [kickEmbed] });
+            }
+        } catch (error) {
+            message.reply('âťŚ Nie udaĹ‚o siÄ™ wyrzuciÄ‡ uĹĽytkownika!');
+            console.error(error);
+        }
+    }
+
+    // Komenda: !ban
+    if (command === 'ban') {
+        if (!message.member.permissions.has(PermissionFlagsBits.BanMembers)) {
+            return message.reply('âťŚ Nie masz uprawnieĹ„ do banowania czĹ‚onkĂłw!');
+        }
+
+        const member = message.mentions.members.first();
+        const reason = args.slice(1).join(' ') || 'Brak powodu';
+
+        if (!member) {
+            return message.reply('âťŚ Oznacz uĹĽytkownika do zbanowania! UĹĽycie: `!ban @uĹĽytkownik powĂłd`');
+        }
+
+        if (!member.bannable) {
+            return message.reply('âťŚ Nie mogÄ™ zbanowaÄ‡ tego uĹĽytkownika!');
+        }
+
+        try {
+            await member.ban({ reason });
+
+            const banEmbed = new EmbedBuilder()
+                .setColor('#FF0000')
+                .setTitle('đź”¨ UĹĽytkownik zbanowany')
+                .addFields(
+                    { name: 'UĹĽytkownik', value: `${member.user.tag}`, inline: true },
+                    { name: 'Moderator', value: `${message.author.tag}`, inline: true },
+                    { name: 'PowĂłd', value: reason, inline: false }
+                )
+                .setTimestamp();
+
+            message.reply({ embeds: [banEmbed] });
+
+            // Log
+            const logsChannel = message.guild.channels.cache.get(process.env.LOGS_CHANNEL_ID);
+            if (logsChannel) {
+                logsChannel.send({ embeds: [banEmbed] });
+            }
+        } catch (error) {
+            message.reply('âťŚ Nie udaĹ‚o siÄ™ zbanowaÄ‡ uĹĽytkownika!');
+            console.error(error);
+        }
+    }
+
+    // Komenda: !help
+    if (command === 'help' || command === 'pomoc') {
+        const helpEmbed = new EmbedBuilder()
+            .setColor('#0099FF')
+            .setTitle('đź“š Lista Komend')
+            .setDescription('Wszystkie dostÄ™pne komendy bota')
+            .addFields(
+                { name: 'đź‘Ą OgĂłlne', value: '`!members` - Statystyki serwera\n`!help` - Ta wiadomoĹ›Ä‡', inline: false },
+                { name: 'đź”¨ Moderacja', value: '`!mute @user 10m powĂłd` - Wycisz uĹĽytkownika\n`!unmute @user` - Odcisz uĹĽytkownika\n`!kick @user powĂłd` - WyrzuÄ‡ uĹĽytkownika\n`!ban @user powĂłd` - Zbanuj uĹĽytkownika', inline: false },
+                { name: 'âš™ď¸Ź Administracja', value: '`!setup-verification` - UtwĂłrz panel weryfikacji\n`!setup-tickets` - UtwĂłrz panel ticketĂłw\n`!regulamin` - WyĹ›wietl regulamin', inline: false }
+            )
+            .setFooter({ text: 'Minecraft Clan Bot' })
+            .setTimestamp();
+
+        message.reply({ embeds: [helpEmbed] });
+    }
+});
+
+// Event: Interakcje (przyciski)
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isButton()) return;
+
+    // Przycisk weryfikacji
+    if (interaction.customId === 'verify') {
+        const verifiedRole = interaction.guild.roles.cache.get(process.env.VERIFIED_ROLE_ID);
+        
+        if (!verifiedRole) {
+            return interaction.reply({ content: 'âťŚ Rola zweryfikowanego nie zostaĹ‚a skonfigurowana!', ephemeral: true });
+        }
+
+        if (interaction.member.roles.cache.has(verifiedRole.id)) {
+            return interaction.reply({ content: 'âś… JesteĹ› juĹĽ zweryfikowany!', ephemeral: true });
+        }
+
+        try {
+            await interaction.member.roles.add(verifiedRole);
+            
+            const successEmbed = new EmbedBuilder()
+                .setColor('#00FF00')
+                .setTitle('âś… Weryfikacja pomyĹ›lna!')
+                .setDescription('Witamy na serwerze! Teraz masz dostÄ™p do wszystkich kanaĹ‚Ăłw.')
+                .setTimestamp();
+
+            await interaction.reply({ embeds: [successEmbed], ephemeral: true });
+
+            // Log
+            const logsChannel = interaction.guild.channels.cache.get(process.env.LOGS_CHANNEL_ID);
+            if (logsChannel) {
+                const logEmbed = new EmbedBuilder()
+                    .setColor('#00FF00')
+                    .setTitle('âś… Nowa weryfikacja')
+                    .setDescription(`${interaction.user.tag} (${interaction.user.id})`)
+                    .setTimestamp();
+                
+                logsChannel.send({ embeds: [logEmbed] });
+            }
+        } catch (error) {
+            console.error(error);
+            interaction.reply({ content: 'âťŚ WystÄ…piĹ‚ bĹ‚Ä…d podczas weryfikacji!', ephemeral: true });
+        }
+    }
+
+    // Przycisk tworzenia ticketu
+    if (interaction.customId === 'create_ticket') {
+        // SprawdĹş czy uĹĽytkownik ma juĹĽ otwarty ticket
+        const existingTicket = activeTickets.get(interaction.user.id);
+        if (existingTicket) {
+            return interaction.reply({ content: `âťŚ Masz juĹĽ otwarte podanie: <#${existingTicket}>`, ephemeral: true });
+        }
+
+        try {
+            // UtwĂłrz kanaĹ‚ ticketu
+            const ticketChannel = await interaction.guild.channels.create({
+                name: `podanie-${interaction.user.username}`,
+                type: ChannelType.GuildText,
+                parent: process.env.TICKET_CATEGORY_ID,
+                permissionOverwrites: [
+                    {
+                        id: interaction.guild.id,
+                        deny: [PermissionFlagsBits.ViewChannel]
+                    },
+                    {
+                        id: interaction.user.id,
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory]
+                    },
+                    {
+                        id: process.env.MODERATOR_ROLE_ID,
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory]
+                    },
+                    {
+                        id: process.env.ADMIN_ROLE_ID,
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory]
+                    }
+                ]
+            });
+
+            activeTickets.set(interaction.user.id, ticketChannel.id);
+
+            const ticketEmbed = new EmbedBuilder()
+                .setColor('#0099FF')
+                .setTitle('đźŽ« Nowe podanie')
+                .setDescription(`Witaj ${interaction.user}! DziÄ™kujemy za zainteresowanie naszym klanem.`)
+                .addFields(
+                    { name: 'đź“ť ProszÄ™ podaj:', value: 'â€˘ TwĂłj nick w Minecraft\nâ€˘ Wiek\nâ€˘ Poprzednie klany\nâ€˘ DoĹ›wiadczenie w grze\nâ€˘ Dlaczego chcesz doĹ‚Ä…czyÄ‡ do nas?\nâ€˘ Ile jesteĹ› w stanie wpĹ‚aciÄ‡ rubinĂłw na start?\nâ€˘ Ile robisz winĂłw dziennie/tygodniowo?', inline: false },
+                    { name: 'âŹ±ď¸Ź Czas odpowiedzi', value: 'Odpowiemy w ciÄ…gu 3 godzin', inline: false }
+                )
+                .setFooter({ text: 'Aby zamknÄ…Ä‡ podanie, kliknij przycisk poniĹĽej' })
+                .setTimestamp();
+
+            const closeButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('close_ticket')
+                        .setLabel('đź”’ Zamknij podanie')
+                        .setStyle(ButtonStyle.Danger)
+                );
+
+            await ticketChannel.send({ content: `${interaction.user} <@&${process.env.MODERATOR_ROLE_ID}>`, embeds: [ticketEmbed], components: [closeButton] });
+
+            await interaction.reply({ content: `âś… Utworzono podanie: ${ticketChannel}`, ephemeral: true });
+
+            // Log
+            const logsChannel = interaction.guild.channels.cache.get(process.env.LOGS_CHANNEL_ID);
+            if (logsChannel) {
+                const logEmbed = new EmbedBuilder()
+                    .setColor('#0099FF')
+                    .setTitle('đźŽ« Nowe podanie')
+                    .setDescription(`${interaction.user.tag} utworzyĹ‚ podanie`)
+                    .addFields({ name: 'KanaĹ‚', value: `${ticketChannel}`, inline: true })
+                    .setTimestamp();
+                
+                logsChannel.send({ embeds: [logEmbed] });
+            }
+        } catch (error) {
+            console.error(error);
+            interaction.reply({ content: 'âťŚ Nie udaĹ‚o siÄ™ utworzyÄ‡ podania!', ephemeral: true });
+        }
+    }
+
+    // Przycisk zamykania ticketu
+    if (interaction.customId === 'close_ticket') {
+        if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels) && 
+            !interaction.member.roles.cache.has(process.env.MODERATOR_ROLE_ID) &&
+            !interaction.member.roles.cache.has(process.env.ADMIN_ROLE_ID)) {
+            return interaction.reply({ content: 'âťŚ Tylko moderatorzy mogÄ… zamykaÄ‡ podania!', ephemeral: true });
+        }
+
+        const confirmEmbed = new EmbedBuilder()
+            .setColor('#FFA500')
+            .setTitle('âš ď¸Ź Potwierdzenie')
+            .setDescription('Czy na pewno chcesz zamknÄ…Ä‡ to podanie?')
+            .setTimestamp();
+
+        const confirmButtons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('confirm_close')
+                    .setLabel('âś… Tak, zamknij')
+                    .setStyle(ButtonStyle.Danger),
+                new ButtonBuilder()
+                    .setCustomId('cancel_close')
+                    .setLabel('âťŚ Anuluj')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+        await interaction.reply({ embeds: [confirmEmbed], components: [confirmButtons], ephemeral: true });
+    }
+
+    // Potwierdzenie zamkniÄ™cia
+    if (interaction.customId === 'confirm_close') {
+        try {
+            // UsuĹ„ z mapy aktywnych ticketĂłw
+            for (const [userId, channelId] of activeTickets.entries()) {
+                if (channelId === interaction.channel.id) {
+                    activeTickets.delete(userId);
+                    break;
+                }
+            }
+
+            await interaction.update({ content: 'đź”’ Zamykanie podania...', embeds: [], components: [] });
+            
+            // PrzenieĹ› do archiwum zamiast usuwaÄ‡
+            const archiveCategoryId = process.env.TICKET_ARCHIVE_CATEGORY_ID;
+            
+            if (archiveCategoryId) {
+                // PrzenieĹ› kanaĹ‚ do kategorii archiwum
+                await interaction.channel.setParent(archiveCategoryId);
+                
+                // ZmieĹ„ nazwÄ™ na "zamkniÄ™te-"
+                const newName = interaction.channel.name.replace('podanie-', 'zamkniÄ™te-');
+                await interaction.channel.setName(newName);
+                
+                // Zablokuj wysyĹ‚anie wiadomoĹ›ci dla wszystkich oprĂłcz adminĂłw
+                await interaction.channel.permissionOverwrites.edit(interaction.guild.id, {
+                    SendMessages: false
+                });
+                
+                // WyĹ›lij wiadomoĹ›Ä‡ o zamkniÄ™ciu
+                const closedEmbed = new EmbedBuilder()
+                    .setColor('#FF0000')
+                    .setTitle('đź”’ Podanie zamkniÄ™te')
+                    .setDescription(`Podanie zostaĹ‚o zamkniÄ™te przez ${interaction.user}`)
+                    .setTimestamp();
+                
+                await interaction.channel.send({ embeds: [closedEmbed] });
+            } else {
+                // JeĹ›li nie ma kategorii archiwum, usuĹ„ kanaĹ‚ (stare zachowanie)
+                setTimeout(async () => {
+                    await interaction.channel.delete();
+                }, 3000);
+            }
+
+            // Log
+            const logsChannel = interaction.guild.channels.cache.get(process.env.LOGS_CHANNEL_ID);
+            if (logsChannel) {
+                const logEmbed = new EmbedBuilder()
+                    .setColor('#FF0000')
+                    .setTitle('đź”’ Podanie zamkniÄ™te')
+                    .setDescription(`Podanie zostaĹ‚o zamkniÄ™te przez ${interaction.user.tag}`)
+                    .addFields({ name: 'KanaĹ‚', value: interaction.channel.name, inline: true })
+                    .setTimestamp();
+                
+                logsChannel.send({ embeds: [logEmbed] });
+            }
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    // Anulowanie zamkniÄ™cia
+    if (interaction.customId === 'cancel_close') {
+        await interaction.update({ content: 'âś… Anulowano zamykanie podania.', embeds: [], components: [] });
+    }
+});
+
+// Logowanie bota
+client.login(process.env.DISCORD_TOKEN);
+
