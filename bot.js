@@ -3100,5 +3100,15 @@ process.on('SIGTERM', () => {
     process.exit(0);
 });
 
+// Keep-alive HTTP server (wymagany przez Railway/hosting)
+const http = require('http');
+const server = http.createServer((req, res) => {
+    res.writeHead(200);
+    res.end('Bot Discord dziala!');
+});
+server.listen(process.env.PORT || 3000, () => {
+    console.log(`Keep-alive server uruchomiony na porcie ${process.env.PORT || 3000}`);
+});
+
 // Logowanie bota
 client.login(process.env.DISCORD_TOKEN);
