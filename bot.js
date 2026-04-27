@@ -816,7 +816,11 @@ client.on('messageCreate', async (message) => {
                 new ButtonBuilder()
                     .setCustomId('create_ticket')
                     .setLabel('📝 Utworz podanie')
-                    .setStyle(ButtonStyle.Primary)
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId('create_help')
+                    .setLabel('🆘 Strefa pomocy')
+                    .setStyle(ButtonStyle.Success)
             );
 
         await message.channel.send({ embeds: [ticketEmbed], components: [ticketButton] });
@@ -2986,6 +2990,83 @@ client.on('interactionCreate', async (interaction) => {
         } catch (error) {
             console.error(error);
             interaction.reply({ content: '❌ Nie udalo sie utworzyc podania!', ephemeral: true });
+        }
+    }
+
+    // Przycisk strefy pomocy
+    if (interaction.customId === 'create_help') {
+        // Sprawdz czy uzytkownik ma juz otwarty ticket
+        const existingTicket = activeTickets.get(interaction.user.id);
+        if (existingTicket) {
+            return interaction.reply({ content: `❌ Masz juz otwarty ticket: <#${existingTicket}>`, ephemeral: true });
+        }
+
+        try {
+            // Utworz kanal pomocy
+            const helpChannel = await interaction.guild.channels.create({
+                name: `pomoc-${interaction.user.username}`,
+                type: ChannelType.GuildText,
+                parent: process.env.TICKET_CATEGORY_ID,
+                permissionOverwrites: [
+                    {
+                        id: interaction.guild.id,
+                        deny: [PermissionFlagsBits.ViewChannel]
+                    },
+                    {
+                        id: interaction.user.id,
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory]
+                    },
+                    {
+                        id: process.env.MODERATOR_ROLE_ID,
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory]
+                    },
+                    {
+                        id: process.env.ADMIN_ROLE_ID,
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory]
+                    }
+                ]
+            });
+
+            activeTickets.set(interaction.user.id, helpChannel.id);
+
+            const helpEmbed = new EmbedBuilder()
+                .setColor('#00FF00')
+                .setTitle('🆘 Strefa pomocy')
+                .setDescription(`Witaj ${interaction.user}! Opisz swoj problem, a moderacja pomoze Ci jak najszybciej.`)
+                .addFields(
+                    { name: '📝 Opisz problem:', value: 'Napisz szczegolowo z czym potrzebujesz pomocy', inline: false },
+                    { name: '⏱️ Czas odpowiedzi', value: 'Odpowiemy w ciagu 3 godzin', inline: false }
+                )
+                .setFooter({ text: 'Aby zamknac ticket, kliknij przycisk ponizej' })
+                .setTimestamp();
+
+            const closeButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('close_ticket')
+                        .setLabel('🔒 Zamknij ticket')
+                        .setStyle(ButtonStyle.Danger)
+                );
+
+            await helpChannel.send({ content: `${interaction.user} <@&${process.env.MODERATOR_ROLE_ID}>`, embeds: [helpEmbed], components: [closeButton] });
+
+            await interaction.reply({ content: `✅ Utworzono ticket pomocy: ${helpChannel}`, ephemeral: true });
+
+            // Log
+            const logsChannel = interaction.guild.channels.cache.get(process.env.LOGS_CHANNEL_ID);
+            if (logsChannel) {
+                const logEmbed = new EmbedBuilder()
+                    .setColor('#00FF00')
+                    .setTitle('🆘 Nowy ticket pomocy')
+                    .setDescription(`${interaction.user.tag} utworzyl ticket pomocy`)
+                    .addFields({ name: 'Kanal', value: `${helpChannel}`, inline: true })
+                    .setTimestamp();
+                
+                logsChannel.send({ embeds: [logEmbed] });
+            }
+        } catch (error) {
+            console.error(error);
+            interaction.reply({ content: '❌ Nie udalo sie utworzyc ticketu pomocy!', ephemeral: true });
         }
     }
 
