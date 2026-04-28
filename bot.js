@@ -2620,6 +2620,20 @@ client.on('messageCreate', async (message) => {
         // !notatka @gracz <treść> - dodaj notatke
         if (target && args.length > 1) {
             const noteText = args.slice(1).join(' ');
+
+            // !notatka @gracz usun <numer> - usun notatke
+            if (args[1] === 'usun' || args[1] === 'usuń') {
+                const num = parseInt(args[2]);
+                const notes = playerNotes.get(target.id) || [];
+                if (!num || num < 1 || num > notes.length) {
+                    return message.reply(`❌ Podaj prawidłowy numer notatki (1-${notes.length})`);
+                }
+                notes.splice(num - 1, 1);
+                playerNotes.set(target.id, notes);
+                saveData();
+                return message.reply(`✅ Usunięto notatkę nr **${num}** o graczu **${target.user.tag}**`);
+            }
+
             const notes = playerNotes.get(target.id) || [];
             notes.push({
                 text: noteText,
@@ -2641,7 +2655,7 @@ client.on('messageCreate', async (message) => {
             return message.reply({ embeds: [noteEmbed] });
         }
 
-        return message.reply('❌ Uzycie: `!notatka @gracz <treść>` lub `!notatka @gracz` (wyswietl notatki)');
+        return message.reply('❌ Uzycie:\n`!notatka @gracz` - wyświetl notatki\n`!notatka @gracz <treść>` - dodaj notatkę\n`!notatka @gracz usun <numer>` - usuń notatkę');
     }
 
     // Komenda: !sticky (przypięta wiadomość na dole)
