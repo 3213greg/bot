@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits, ChannelType } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits, ChannelType, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 
@@ -20,6 +20,9 @@ const client = new Client({
 // Przechowywanie aktywnych ticketow
 const activeTickets = new Map();
 const mutedUsers = new Map();
+
+// Notatki o graczach
+const playerNotes = new Map(); // { userId: [{text, mod, date}] }
 
 // System XP i poziomow
 const userXP = new Map(); // { userId: { xp: 0, level: 1, lastMessage: timestamp } }
@@ -112,6 +115,7 @@ const INVENTORY_FILE = path.join(DATA_DIR, 'inventory.json');
 const ACHIEVEMENTS_FILE = path.join(DATA_DIR, 'achievements.json');
 const LOTTERY_FILE = path.join(DATA_DIR, 'lottery.json');
 const VOICE_FILE = path.join(DATA_DIR, 'voice.json');
+const NOTES_FILE = path.join(DATA_DIR, 'notes.json');
 
 // Utworz folder data jesli nie istnieje
 if (!fs.existsSync(DATA_DIR)) {
@@ -141,6 +145,7 @@ function saveData() {
         fs.writeFileSync(ACHIEVEMENTS_FILE, JSON.stringify(achievementsData, null, 2));
         fs.writeFileSync(LOTTERY_FILE, JSON.stringify(lotteryData, null, 2));
         fs.writeFileSync(VOICE_FILE, JSON.stringify(voiceData, null, 2));
+        fs.writeFileSync(NOTES_FILE, JSON.stringify(Object.fromEntries(playerNotes), null, 2));
         
         console.log('✅ Dane zapisane');
     } catch (error) {
@@ -215,6 +220,15 @@ function loadData() {
                 voiceTotalTime.set(userId, time);
             }
             console.log(`✅ Wczytano ${voiceTotalTime.size} uzytkownikow (Voice)`);
+        }
+
+        // Wczytaj notatki
+        if (fs.existsSync(NOTES_FILE)) {
+            const notesData = JSON.parse(fs.readFileSync(NOTES_FILE, 'utf8'));
+            for (const [userId, notes] of Object.entries(notesData)) {
+                playerNotes.set(userId, notes);
+            }
+            console.log(`✅ Wczytano notatki (${playerNotes.size} graczy)`);
         }
     } catch (error) {
         console.error('❌ Blad wczytywania danych:', error);
@@ -807,28 +821,48 @@ client.on('messageCreate', async (message) => {
 
         const ticketEmbed = new EmbedBuilder()
             .setColor('#0099FF')
-            .setTitle('🎫 SYSTEM PODAN')
-            .setDescription('Kliknij przycisk ponizej, aby utworzyc podanie do klanu!')
+            .setTitle('🎫 SYSTEM TICKETÓW')
+            .setDescription('Wybierz kategorię z listy poniżej, aby otworzyć ticket!')
             .addFields(
-                { name: '📝 Co zawrzec w podaniu?', value: '• Twoj nick w Minecraft\n• Wiek\n• Poprzednie klany\n• Doswiadczenie w grze\n• Dlaczego chcesz dolaczyc do nas?\n• Ile jestes w stanie wplacic rubinow na start?\n• Ile robisz winow dziennie/tygodniowo?', inline: false },
-                { name: '⏱️ Czas odpowiedzi', value: 'Odpowiemy w ciagu 3 godzin', inline: false }
+                { name: '⚔️ Rekrutacja do klanu', value: 'Chcesz dołączyć do klanu JAPAN?', inline: false },
+                { name: '🚪 Opuszczenie klanu', value: 'Chcesz opuścić klan?', inline: false },
+                { name: '💬 Inne', value: 'Masz inne pytanie lub problem?', inline: false },
+                { name: '⚖️ Sprawa do zarządu', value: 'Masz sprawę do zarządu klanu?', inline: false },
+                { name: '⏱️ Czas odpowiedzi', value: 'Odpowiemy w ciągu 3 godzin', inline: false }
             )
-            .setFooter({ text: 'Kliknij przycisk aby utworzyc podanie' })
+            .setFooter({ text: 'Wybierz kategorię z listy poniżej' })
             .setTimestamp();
 
-        const ticketButton = new ActionRowBuilder()
+        const ticketMenu = new ActionRowBuilder()
             .addComponents(
-                new ButtonBuilder()
-                    .setCustomId('create_ticket')
-                    .setLabel('📝 Utworz podanie')
-                    .setStyle(ButtonStyle.Primary),
-                new ButtonBuilder()
-                    .setCustomId('create_help')
-                    .setLabel('🆘 Strefa pomocy')
-                    .setStyle(ButtonStyle.Success)
+                new StringSelectMenuBuilder()
+                    .setCustomId('ticket_select')
+                    .setPlaceholder('Wybierz kategorię ticketu')
+                    .addOptions(
+                        new StringSelectMenuOptionBuilder()
+                            .setLabel('Rekrutacja do klanu')
+                            .setDescription('Wybierz tą opcję, aby utworzyć ticket: Rekrutacja do klanu')
+                            .setEmoji('⚔️')
+                            .setValue('rekrutacja'),
+                        new StringSelectMenuOptionBuilder()
+                            .setLabel('Opuszczenie klanu')
+                            .setDescription('Wybierz tą opcję, aby utworzyć ticket: Opuszczenie klanu')
+                            .setEmoji('🚪')
+                            .setValue('opuszczenie'),
+                        new StringSelectMenuOptionBuilder()
+                            .setLabel('Inne')
+                            .setDescription('Wybierz tą opcję, aby utworzyć ticket: Inne')
+                            .setEmoji('💬')
+                            .setValue('inne'),
+                        new StringSelectMenuOptionBuilder()
+                            .setLabel('Sprawa do zarządu')
+                            .setDescription('Wybierz tą opcję, aby utworzyć ticket: Sprawa do zarządu')
+                            .setEmoji('⚖️')
+                            .setValue('zarzad')
+                    )
             );
 
-        await message.channel.send({ embeds: [ticketEmbed], components: [ticketButton] });
+        await message.channel.send({ embeds: [ticketEmbed], components: [ticketMenu] });
         message.delete().catch(() => {});
     }
 
@@ -2535,6 +2569,81 @@ client.on('messageCreate', async (message) => {
         }
     }
 
+    // Komenda: !ogloszenie (system ogłoszeń)
+    if (command === 'ogloszenie' || command === 'announce') {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageMessages) &&
+            !message.member.roles.cache.has(process.env.MODERATOR_ROLE_ID) &&
+            !message.member.roles.cache.has(process.env.ADMIN_ROLE_ID)) {
+            return message.reply('❌ Nie masz uprawnien do wysylania ogloszen!');
+        }
+
+        const content = args.join(' ');
+        if (!content) {
+            return message.reply('❌ Uzycie: `!ogloszenie <treść>`');
+        }
+
+        const announceEmbed = new EmbedBuilder()
+            .setColor('#FF6B00')
+            .setTitle('📣 Ogłoszenie')
+            .setDescription(content)
+            .setFooter({ text: `Ogłoszenie od: ${message.author.tag}` })
+            .setTimestamp();
+
+        await message.channel.send({ content: '@everyone', embeds: [announceEmbed] });
+        message.delete().catch(() => {});
+    }
+
+    // Komenda: !notatka (notatki o graczach)
+    if (command === 'notatka' || command === 'note') {
+        if (!message.member.permissions.has(PermissionFlagsBits.ModerateMembers) &&
+            !message.member.roles.cache.has(process.env.MODERATOR_ROLE_ID) &&
+            !message.member.roles.cache.has(process.env.ADMIN_ROLE_ID)) {
+            return message.reply('❌ Nie masz uprawnien do dodawania notatek!');
+        }
+
+        const target = message.mentions.members.first();
+
+        // !notatka @gracz - wyswietl notatki
+        if (target && args.length === 1) {
+            const notes = playerNotes.get(target.id) || [];
+            if (notes.length === 0) {
+                return message.reply(`📋 Brak notatek o graczu **${target.user.tag}**`);
+            }
+            const notesEmbed = new EmbedBuilder()
+                .setColor('#0099FF')
+                .setTitle(`📋 Notatki o ${target.user.tag}`)
+                .setDescription(notes.map((n, i) => `**${i + 1}.** [${n.date}] ${n.mod}: ${n.text}`).join('\n'))
+                .setTimestamp();
+            return message.reply({ embeds: [notesEmbed] });
+        }
+
+        // !notatka @gracz <treść> - dodaj notatke
+        if (target && args.length > 1) {
+            const noteText = args.slice(1).join(' ');
+            const notes = playerNotes.get(target.id) || [];
+            notes.push({
+                text: noteText,
+                mod: message.author.tag,
+                date: new Date().toLocaleDateString('pl-PL')
+            });
+            playerNotes.set(target.id, notes);
+            saveData();
+
+            const noteEmbed = new EmbedBuilder()
+                .setColor('#00FF00')
+                .setTitle('📋 Notatka dodana')
+                .addFields(
+                    { name: 'Gracz', value: target.user.tag, inline: true },
+                    { name: 'Moderator', value: message.author.tag, inline: true },
+                    { name: 'Treść', value: noteText, inline: false }
+                )
+                .setTimestamp();
+            return message.reply({ embeds: [noteEmbed] });
+        }
+
+        return message.reply('❌ Uzycie: `!notatka @gracz <treść>` lub `!notatka @gracz` (wyswietl notatki)');
+    }
+
     // Komenda: !sticky (przypięta wiadomość na dole)
     if (command === 'sticky' || command === 'przypnij') {
         if (!message.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
@@ -2744,8 +2853,76 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-// Event: Interakcje (przyciski)
+// Event: Interakcje (przyciski i menu)
 client.on('interactionCreate', async (interaction) => {
+    // Obsługa dropdown menu ticketów
+    if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_select') {
+        const selected = interaction.values[0];
+
+        const existingTicket = activeTickets.get(interaction.user.id);
+        if (existingTicket) {
+            return interaction.reply({ content: `❌ Masz już otwarty ticket: <#${existingTicket}>`, ephemeral: true });
+        }
+
+        const categories = {
+            rekrutacja: { name: 'rekrutacja', title: '⚔️ Rekrutacja do klanu', color: '#00FF00', desc: 'Opisz dlaczego chcesz dołączyć do klanu JAPAN.\n\n• Nick w Minecraft\n• Wiek\n• Poprzednie klany\n• Ile robisz winów dziennie/tygodniowo?\n• Ile możesz wpłacić rubinów na start?' },
+            opuszczenie: { name: 'opuszczenie', title: '🚪 Opuszczenie klanu', color: '#FF6B00', desc: 'Opisz powód opuszczenia klanu.' },
+            inne: { name: 'inne', title: '💬 Inne', color: '#0099FF', desc: 'Opisz swój problem lub pytanie.' },
+            zarzad: { name: 'zarzad', title: '⚖️ Sprawa do zarządu', color: '#FF0000', desc: 'Opisz sprawę do zarządu klanu.' }
+        };
+
+        const cat = categories[selected];
+
+        try {
+            const ticketChannel = await interaction.guild.channels.create({
+                name: `${cat.name}-${interaction.user.username}`,
+                type: ChannelType.GuildText,
+                parent: process.env.TICKET_CATEGORY_ID,
+                permissionOverwrites: [
+                    { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+                    { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+                    { id: process.env.MODERATOR_ROLE_ID, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+                    { id: process.env.ADMIN_ROLE_ID, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }
+                ]
+            });
+
+            activeTickets.set(interaction.user.id, ticketChannel.id);
+
+            const ticketEmbed = new EmbedBuilder()
+                .setColor(cat.color)
+                .setTitle(cat.title)
+                .setDescription(`Witaj ${interaction.user}!\n\n${cat.desc}`)
+                .setFooter({ text: 'Aby zamknąć ticket, kliknij przycisk poniżej' })
+                .setTimestamp();
+
+            const closeButton = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('close_ticket')
+                        .setLabel('🔒 Zamknij ticket')
+                        .setStyle(ButtonStyle.Danger)
+                );
+
+            await ticketChannel.send({ content: `${interaction.user} <@&${process.env.MODERATOR_ROLE_ID}>`, embeds: [ticketEmbed], components: [closeButton] });
+            await interaction.reply({ content: `✅ Utworzono ticket: ${ticketChannel}`, ephemeral: true });
+
+            const logsChannel = interaction.guild.channels.cache.get(process.env.LOGS_CHANNEL_ID);
+            if (logsChannel) {
+                const logEmbed = new EmbedBuilder()
+                    .setColor(cat.color)
+                    .setTitle(`${cat.title} — nowy ticket`)
+                    .setDescription(`${interaction.user.tag} otworzył ticket`)
+                    .addFields({ name: 'Kanał', value: `${ticketChannel}`, inline: true })
+                    .setTimestamp();
+                logsChannel.send({ embeds: [logEmbed] });
+            }
+        } catch (error) {
+            console.error(error);
+            interaction.reply({ content: '❌ Nie udało się utworzyć ticketu!', ephemeral: true });
+        }
+        return;
+    }
+
     if (!interaction.isButton()) return;
 
     // Przyciski Blackjack - HIT
