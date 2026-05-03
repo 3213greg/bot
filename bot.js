@@ -1085,6 +1085,78 @@ client.on('messageCreate', async (message) => {
         }
     }
 
+    // Komenda: !xp add (dodaj XP uzytkownikowi)
+    if (command === 'xp' && args[0] === 'add') {
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            return message.reply('❌ Nie masz uprawnien do dodawania XP!');
+        }
+
+        const member = message.mentions.members.first();
+        const xpAmount = parseInt(args[2]);
+
+        if (!member) {
+            return message.reply('❌ Oznacz uzytkownika! Uzycie: `!xp add @uzytkownik <ilosc>`');
+        }
+
+        if (!xpAmount || xpAmount < 1) {
+            return message.reply('❌ Podaj prawidlowa ilosc XP! Uzycie: `!xp add @uzytkownik <ilosc>`');
+        }
+
+        const userId = member.id;
+        const userData = userXP.get(userId) || { xp: 0, level: 1, lastMessage: 0 };
+        const oldLevel = userData.level;
+        
+        userData.xp += xpAmount;
+        const newLevel = calculateLevel(userData.xp);
+        userData.level = newLevel;
+        
+        userXP.set(userId, userData);
+
+        const xpEmbed = new EmbedBuilder()
+            .setColor('#00FF00')
+            .setTitle('✅ Dodano XP')
+            .addFields(
+                { name: 'Uzytkownik', value: `${member.user.tag}`, inline: true },
+                { name: 'Dodano XP', value: `+${xpAmount}`, inline: true },
+                { name: 'Calkowite XP', value: `${userData.xp}`, inline: true },
+                { name: 'Poziom', value: `${userData.level}`, inline: true }
+            )
+            .setTimestamp();
+
+        message.reply({ embeds: [xpEmbed] });
+
+        // Sprawdz czy awansowal
+        if (newLevel > oldLevel) {
+            const levelUpMessage = `\`\`\`
+╭─── ⋅ ⋅ ─── 🚀 ─── ⋅ ⋅ ───╮
+
+  Gratulacje ${member.user.username} 🎉🎊
+  Właśnie osiągnąłeś level ${newLevel} 🥳🎂
+  Dziękujemy za aktywność! ❤️
+
+╰─── ⋅ ⋅ ─── 🚀 ─── ⋅ ⋅ ───╯
+\`\`\``;
+            
+            message.channel.send(levelUpMessage);
+        }
+
+        // Log
+        const logsChannel = message.guild.channels.cache.get(process.env.LOGS_CHANNEL_ID);
+        if (logsChannel) {
+            const logEmbed = new EmbedBuilder()
+                .setColor('#00FF00')
+                .setTitle('📊 Dodano XP')
+                .addFields(
+                    { name: 'Uzytkownik', value: `${member.user.tag}`, inline: true },
+                    { name: 'Admin', value: `${message.author.tag}`, inline: true },
+                    { name: 'Dodano XP', value: `+${xpAmount}`, inline: true }
+                )
+                .setTimestamp();
+            
+            logsChannel.send({ embeds: [logEmbed] });
+        }
+    }
+
     // Komenda: !clear (usun wiadomosci)
     if (command === 'clear' || command === 'purge' || command === 'usun') {
         if (!message.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
