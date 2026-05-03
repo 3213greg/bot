@@ -1160,6 +1160,82 @@ client.on('messageCreate', async (message) => {
         }
     }
 
+    // Komenda: !xp set (ustaw XP uzytkownikowi)
+    if (command === 'xp' && args[0] === 'set') {
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            return message.reply('❌ Nie masz uprawnien do ustawiania XP!');
+        }
+
+        const member = message.mentions.members.first();
+        const xpAmount = parseInt(args[2]);
+
+        if (!member) {
+            return message.reply('❌ Oznacz uzytkownika! Uzycie: `!xp set @uzytkownik <ilosc>`');
+        }
+
+        if (!xpAmount || xpAmount < 0) {
+            return message.reply('❌ Podaj prawidlowa ilosc XP! Uzycie: `!xp set @uzytkownik <ilosc>`');
+        }
+
+        const userId = member.id;
+        const userData = userXP.get(userId) || { xp: 0, level: 1, lastMessage: 0 };
+        const oldLevel = userData.level;
+        const oldXP = userData.xp;
+        
+        userData.xp = xpAmount;
+        const newLevel = calculateLevel(userData.xp);
+        userData.level = newLevel;
+        
+        userXP.set(userId, userData);
+
+        const xpEmbed = new EmbedBuilder()
+            .setColor('#FFA500')
+            .setTitle('⚙️ Ustawiono XP')
+            .addFields(
+                { name: 'Uzytkownik', value: `${member.user.tag}`, inline: true },
+                { name: 'Poprzednie XP', value: `${oldXP}`, inline: true },
+                { name: 'Nowe XP', value: `${userData.xp}`, inline: true },
+                { name: 'Poziom', value: `${userData.level}`, inline: true }
+            )
+            .setTimestamp();
+
+        message.reply({ embeds: [xpEmbed] });
+
+        // Sprawdz czy awansowal
+        if (newLevel > oldLevel) {
+            const levelUpEmbed = new EmbedBuilder()
+                .setColor('#FFD700')
+                .setTitle('🚀 LEVEL UP!')
+                .setDescription(`**${member}** awansował na poziom **${newLevel}**!`)
+                .addFields(
+                    { name: '🎉 Gratulacje!', value: `Zdobyłeś poziom ${newLevel}!`, inline: false },
+                    { name: '⭐ Całkowite XP', value: `${userData.xp}`, inline: true },
+                    { name: '📊 Poziom', value: `${newLevel}`, inline: true }
+                )
+                .setThumbnail(member.user.displayAvatarURL())
+                .setTimestamp();
+            
+            message.channel.send({ content: `${member}`, embeds: [levelUpEmbed] });
+        }
+
+        // Log
+        const logsChannel2 = message.guild.channels.cache.get(process.env.LOGS_CHANNEL_ID);
+        if (logsChannel2) {
+            const logEmbed = new EmbedBuilder()
+                .setColor('#FFA500')
+                .setTitle('⚙️ Ustawiono XP')
+                .addFields(
+                    { name: 'Uzytkownik', value: `${member.user.tag}`, inline: true },
+                    { name: 'Admin', value: `${message.author.tag}`, inline: true },
+                    { name: 'Poprzednie XP', value: `${oldXP}`, inline: true },
+                    { name: 'Nowe XP', value: `${xpAmount}`, inline: true }
+                )
+                .setTimestamp();
+            
+            logsChannel2.send({ embeds: [logEmbed] });
+        }
+    }
+
     // Komenda: !clear (usun wiadomosci)
     if (command === 'clear' || command === 'purge' || command === 'usun') {
         if (!message.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
