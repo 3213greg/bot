@@ -764,15 +764,18 @@ client.on('messageCreate', async (message) => {
             if (newLevel > oldLevel) {
                 userData.level = newLevel;
                 
-                const levelUpEmbed = new EmbedBuilder()
-                    .setColor('#FFD700')
-                    .setTitle('⬆️ LEVEL UP!')
-                    .setDescription(`${message.author} awansowal na poziom **${newLevel}**!`)
-                    .addFields({ name: '🎉 Gratulacje!', value: `Zdobyles poziom ${newLevel}!`, inline: false })
-                    .setThumbnail(message.author.displayAvatarURL())
-                    .setTimestamp();
+                // Nowa wiadomość z ramką z rakiet
+                const levelUpMessage = `\`\`\`
+╭─── ⋅ ⋅ ─── 🚀 ─── ⋅ ⋅ ───╮
+
+  Gratulacje ${message.author.username} 🎉🎊
+  Właśnie osiągnąłeś level ${newLevel} 🥳🎂
+  Dziękujemy za aktywność! ❤️
+
+╰─── ⋅ ⋅ ─── 🚀 ─── ⋅ ⋅ ───╯
+\`\`\``;
                 
-                message.channel.send({ embeds: [levelUpEmbed] });
+                message.channel.send(levelUpMessage);
             }
             
             userXP.set(userId, userData);
