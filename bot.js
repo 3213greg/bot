@@ -693,6 +693,20 @@ async function moveToAFK(member, reason) {
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
     
+    // Reakcja na pingowanie bota
+    if (message.mentions.has(client.user)) {
+        const responses = [
+            'na chuj ten ping pedale jebany',
+            'co chcesz ode mnie?',
+            'przestań mnie pingować',
+            'zajęty jestem',
+            'nie mam czasu na ciebie'
+        ];
+        const randomResponse = responses[Math.floor(Math.random() * responses.length)];
+        message.reply(randomResponse);
+        return;
+    }
+    
     // Sticky message - przesun na dol
     const sticky = stickyMessages.get(message.channel.id);
     if (sticky && !message.content.startsWith('!')) {
