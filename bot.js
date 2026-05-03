@@ -764,18 +764,19 @@ client.on('messageCreate', async (message) => {
             if (newLevel > oldLevel) {
                 userData.level = newLevel;
                 
-                // Nowa wiadomość z ramką z rakiet
-                const levelUpMessage = `\`\`\`
-╭─── ⋅ ⋅ ─── 🚀 ─── ⋅ ⋅ ───╮
-
-  Gratulacje ${message.author.username} 🎉🎊
-  Właśnie osiągnąłeś level ${newLevel} 🥳🎂
-  Dziękujemy za aktywność! ❤️
-
-╰─── ⋅ ⋅ ─── 🚀 ─── ⋅ ⋅ ───╯
-\`\`\``;
+                const levelUpEmbed = new EmbedBuilder()
+                    .setColor('#FFD700')
+                    .setTitle('🚀 LEVEL UP!')
+                    .setDescription(`**${message.author}** awansował na poziom **${newLevel}**!`)
+                    .addFields(
+                        { name: '🎉 Gratulacje!', value: `Zdobyłeś poziom ${newLevel}!`, inline: false },
+                        { name: '⭐ Całkowite XP', value: `${userData.xp}`, inline: true },
+                        { name: '📊 Poziom', value: `${newLevel}`, inline: true }
+                    )
+                    .setThumbnail(message.author.displayAvatarURL())
+                    .setTimestamp();
                 
-                message.channel.send(levelUpMessage);
+                message.channel.send({ content: `${message.author}`, embeds: [levelUpEmbed] });
             }
             
             userXP.set(userId, userData);
@@ -1127,17 +1128,19 @@ client.on('messageCreate', async (message) => {
 
         // Sprawdz czy awansowal
         if (newLevel > oldLevel) {
-            const levelUpMessage = `\`\`\`
-╭─── ⋅ ⋅ ─── 🚀 ─── ⋅ ⋅ ───╮
-
-  Gratulacje ${member.user.username} 🎉🎊
-  Właśnie osiągnąłeś level ${newLevel} 🥳🎂
-  Dziękujemy za aktywność! ❤️
-
-╰─── ⋅ ⋅ ─── 🚀 ─── ⋅ ⋅ ───╯
-\`\`\``;
+            const levelUpEmbed = new EmbedBuilder()
+                .setColor('#FFD700')
+                .setTitle('🚀 LEVEL UP!')
+                .setDescription(`**${member}** awansował na poziom **${newLevel}**!`)
+                .addFields(
+                    { name: '🎉 Gratulacje!', value: `Zdobyłeś poziom ${newLevel}!`, inline: false },
+                    { name: '⭐ Całkowite XP', value: `${userData.xp}`, inline: true },
+                    { name: '📊 Poziom', value: `${newLevel}`, inline: true }
+                )
+                .setThumbnail(member.user.displayAvatarURL())
+                .setTimestamp();
             
-            message.channel.send(levelUpMessage);
+            message.channel.send({ content: `${member}`, embeds: [levelUpEmbed] });
         }
 
         // Log
